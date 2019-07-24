@@ -1,0 +1,446 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Nationalhymnen: Aggregieren und Aufbereiten der Daten "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Ressourcen: \n",
+    "* [Wikipedia](https://de.wikipedia.org/Liste_der_Nationalhymnen): In der Wikipedia sind fast alle Nationalhymnen erfasst -- oftmals inklusive einer Übersetzung in die deutsche Sprache. Da die Liedtexte nicht einheitlich strukturiert sind, ist beim Auslesen Handarbeit nötig. \n",
+    "* [Midi-Datenbank](https://www.kaggle.com/awesomepgm/national-anthems-of-every-country): Datenbank mit allen Midi-Dateien. \n",
+    "* [Nationalanthems.info](http://www.nationalanthems.info/Texte): In der Sammlung von Nationalanthems.info sind Hintergrundinformationen zu Nationalhymnen erfasst. Verfügbar ist auch der Text sowie teilweise Übersetzungen ins Englische."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Fürs Herunterladen der Rohdaten aus der Wikipedia. \n",
+    "import wikipedia\n",
+    "wikipedia.set_lang(\"de\")\n",
+    "from bs4 import BeautifulSoup\n",
+    "from requests import get\n",
+    "from time import sleep\n",
+    "import urllib.request\n",
+    "\n",
+    "# Für die Datenaufbereitung. \n",
+    "import re\n",
+    "from langdetect import detect\n",
+    "from os import system\n",
+    "import pandas as pd\n",
+    "from os import listdir\n",
+    "from fuzzywuzzy import process"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Die Übersicht über die Nationalhymnen aus der Wikipedia wird geladen. \n",
+    "r = wikipedia.page('Liste der Nationalhymnen')\n",
+    "s = BeautifulSoup(r.html(), 'lxml')\n",
+    "t = s.find('table', {'class': 'wikitable'})\n",
+    "tr = t.find_all('tr')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Zusammenstellen der Links zu den Wikipedia-Seiten der Nationalhymnen. \n",
+    "link_dict = dict()\n",
+    "for t in tr[1:]: \n",
+    "    tds = t.find_all('td')\n",
+    "    land = tds[0].find('a')['title']\n",
+    "    link_song = 'https://de.wikipedia.org' + tds[1].find('a')['href']\n",
+    "    link_dict[land] = link_song"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Herunterladen der Texte der Nationalhymnen. \n",
+    "lyrics_dict = dict()\n",
+    "probleme = list()\n",
+    "\n",
+    "for l in link_dict.keys():\n",
+    "    sleep(2)\n",
+    "    try:\n",
+    "        r = get(link_dict[l])\n",
+    "        s = BeautifulSoup(r.content, 'lxml')\n",
+    "        liedtext = s.find_all('div', {'class': 'poem'})\n",
+    "        liedtext = [x.find('p').text.strip() for x in liedtext]\n",
+    "        lyrics_dict[l] = liedtext\n",
+    "    except:\n",
+    "        print('Problem bei', l)\n",
+    "        probleme.append(l)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Behalten werden bloss die deutschsprachigen Texte. \n",
+    "for l in lyrics_dict.keys():\n",
+    "    try:\n",
+    "        sp = [detect(x) for x in lyrics_dict[l]]\n",
+    "        n = 0 \n",
+    "        temp_list = list()\n",
+    "        for s in sp:\n",
+    "            if s == 'de':\n",
+    "                temp_list.append(lyrics_dict[l][n])\n",
+    "            n += 1\n",
+    "        if len(temp_list) > 0:\n",
+    "            lyrics_dict[l] = temp_list\n",
+    "    except:\n",
+    "        pass"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Verweise aus der Wikipedia, Strophen-Angaben etc. werden entfernt.\n",
+    "for l in lyrics_dict.keys():\n",
+    "    t = '\\n'.join(lyrics_dict[l])\n",
+    "    t = re.sub('Strophe\\w\\d', '', t)\n",
+    "    t = re.sub('\\(\\d{1,2}\\)', '', t)\n",
+    "    t = re.sub('\\[\\d{1,2}\\]', '', t)\n",
+    "    lyrics_dict[l] = t"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Die einzelnen Texte werden abgespeichert. \n",
+    "for l in lyrics_dict.keys():\n",
+    "    with open('daten/' + l + '.txt', 'w') as f:\n",
+    "        f.write(lyrics_dict[l])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Die Texte werden manuell bearbeitet. \n",
+    "alle_länder = list(lyrics_dict.keys())\n",
+    "#ok = list()\n",
+    "for l in [x for x in alle_länder if x not in ok]:\n",
+    "    system('google-chrome ' + link_dict[l] + ' &')\n",
+    "    system('gedit daten/' + l + '.txt')\n",
+    "    ok.append(l)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Eine Tabelle mit den Verweisen zu den Dateien wird kreiert"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 96,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Eine Tabelle mit den Infos zu den Daten wird kreiert. \n",
+    "df = pd.DataFrame.from_dict(link_dict, orient='index')\n",
+    "df.columns = ['link_wikipedia']\n",
+    "df['text'] = df.index + '.txt'"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 97,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Die Englische Länderbezeichnung wird hinzugefügt. \n",
+    "df_ländernamen = pd.read_html('https://www.101languages.net/german/country-names-german/')[0]\n",
+    "df = pd.merge(df.reset_index(), df_ländernamen, left_on='index', right_on='German', how='left').set_index('index')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 98,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Wo der englische Namen nicht erkannt wurde, versuchen wir es mit einer Übersetzung. \n",
+    "from translate import Translator\n",
+    "translator = Translator(from_lang='de', to_lang='en')\n",
+    "\n",
+    "for index, row in df.iterrows():\n",
+    "    if str(row['English']) == 'nan':\n",
+    "        t = translator.translate(index)\n",
+    "        df.at[index, 'English'] = t"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 99,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Der Verweis zur (wahrscheinlich entsprechenden) Midi-Datei wird angefügt. \n",
+    "f = listdir('midi/')\n",
+    "\n",
+    "temp_dict = dict()\n",
+    "for index, row in df.iterrows():\n",
+    "    try:\n",
+    "        temp_dict[index] = process.extractOne(row['English'], [x.replace('.mid', '').capitalize() for x in f])\n",
+    "    except:\n",
+    "        pass\n",
+    "\n",
+    "temp_dict = {key:val for key, val in temp_dict.items() if val[1] > 85}\n",
+    "df = pd.merge(df, pd.DataFrame.from_dict(temp_dict, orient='index'), left_index=True, right_index=True, how='left')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 100,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Im Midi-Datensatz fehlen einige Länder. Sie werden aus einer anderen Quelle ergänzt.\n",
+    "midi_links = dict()\n",
+    "lis = list()\n",
+    "\n",
+    "for n in range(1,6):\n",
+    "    r = get('https://www.midiworld.com/search/' + str(n) + '/?q=national%20anthems')\n",
+    "    s = BeautifulSoup(r.content, 'lxml')\n",
+    "    for l in s.find_all('ul')[1].find_all('li'):\n",
+    "        lis.append(l)\n",
+    "\n",
+    "for li in lis:\n",
+    "    try:\n",
+    "        c = re.search('(.*) \\(National Anthems\\)', li.text).group(1)\n",
+    "        l = li.find('a')['href']\n",
+    "        midi_links[c] = l\n",
+    "    except:\n",
+    "        pass\n",
+    "\n",
+    "df = pd.merge(df, pd.DataFrame.from_dict(midi_links, orient='index'), left_on='English', right_index=True, how='left')\n",
+    "df = df.rename(columns = {'0_y': 'link_midi'})"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 101,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Der Verweis zur (wahrscheinlich entsprechenden) Flagge wird angefügt. \n",
+    "f = listdir('flaggen/')\n",
+    "\n",
+    "temp_dict = dict()\n",
+    "for index, row in df.iterrows():\n",
+    "    try:\n",
+    "        temp_dict[index] = process.extractOne(row['English'], [x.replace('_flag.png', '') for x in f])\n",
+    "    except:\n",
+    "        pass\n",
+    "temp_dict = {key:val for key, val in temp_dict.items() if val[1] > 85}\n",
+    "df = pd.merge(df, pd.DataFrame.from_dict(temp_dict, orient='index'), left_index=True, right_index=True, how='left')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 102,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df.columns = ['link_wikipedia', 'text', 'englisch', 'deutsch', 'midi', 'midi_wahrscheinlichkeit', 'link_midi', 'flagge', 'flagge_wahrscheinlichkeit']\n",
+    "df = df[['englisch', 'link_wikipedia', 'text', 'midi', 'link_midi', 'flagge']]\n",
+    "df['flagge'] = df['flagge'].apply(lambda x: str(x).lower() + '_flag.png')\n",
+    "df['midi'] = df['midi'].apply(lambda x: str(x).lower() + '.mid')\n",
+    "df['midi'] = df['midi'].replace('nan.mid', '')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 103,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Die fehlenden Midi-Files werden heruntergeladen.\n",
+    "for index, row in df.iterrows():\n",
+    "    if 'nan.' in str(row['midi']).lower():\n",
+    "        try:\n",
+    "            m = urllib.request.urlretrieve(row['link_midi'], 'midi/' + row['englisch'] + '.mid')\n",
+    "            print(index, 'hinzugefügt.')\n",
+    "        except:\n",
+    "            print('Problem bei', index)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 104,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Und nochmals: Der Verweis zur (wahrscheinlich entsprechenden) Midi-Datei wird angefügt. \n",
+    "f = listdir('midi/')\n",
+    "\n",
+    "temp_dict = dict()\n",
+    "for index, row in df.iterrows():\n",
+    "    try:\n",
+    "        temp_dict[index] = process.extractOne(row['englisch'], [x.replace('.mid', '').capitalize() for x in f])\n",
+    "    except:\n",
+    "        pass\n",
+    "\n",
+    "temp_dict = {key:val for key, val in temp_dict.items() if val[1] > 85}\n",
+    "df = pd.merge(df, pd.DataFrame.from_dict(temp_dict, orient='index'), left_index=True, right_index=True, how='left')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 80,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df.to_csv('länderübersicht.csv')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 71,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "javaldx: Could not find a Java Runtime Environment!\r\n",
+      "Please ensure that a JVM and the package libreoffice-java-common\r\n",
+      "is installed.\r\n",
+      "If it is already installed then try removing ~/.config/libreoffice/4/user/config/javasettings_Linux_*.xml\r\n",
+      "Warning: failed to read path from javaldx\r\n"
+     ]
+    }
+   ],
+   "source": [
+    "!libreoffice länderübersicht.csv"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 106,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "Index(['Bosnien und Herzegowina', 'Republik China (Taiwan)', 'Elfenbeinküste',\n",
+       "       'Eritrea', 'Kasachstan', 'Kirgisistan', 'Komoren', 'Kosovo',\n",
+       "       'Liechtenstein', 'Marshallinseln', 'Montenegro', 'Niger', 'Osttimor',\n",
+       "       'Palästinensische Autonomiegebiete', 'Palau', 'Salomonen',\n",
+       "       'São Tomé und Príncipe', 'Serbien', 'Seychellen', 'St. Kitts und Nevis',\n",
+       "       'St. Lucia', 'St. Vincent und die Grenadinen', 'Sudan', 'Südsudan',\n",
+       "       'Turkmenistan', 'Weißrussland'],\n",
+       "      dtype='object', name='index')"
+      ]
+     },
+     "execution_count": 106,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Welche Midi-Dateien fehlen? \n",
+    "df[df['midi'] == ''].index"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 107,
+   "metadata": {},
+   "outputs": [
+    {
+     "ename": "SyntaxError",
+     "evalue": "invalid syntax (<ipython-input-107-7a7d0422ea85>, line 5)",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;36m  File \u001b[0;32m\"<ipython-input-107-7a7d0422ea85>\"\u001b[0;36m, line \u001b[0;32m5\u001b[0m\n\u001b[0;31m    df.at['Eritrea', 'midi'] =\u001b[0m\n\u001b[0m                               ^\u001b[0m\n\u001b[0;31mSyntaxError\u001b[0m\u001b[0;31m:\u001b[0m invalid syntax\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Sie werden manuell heruntergeladen und in die Tabelle eingetragen. \n",
+    "df.at['Bosnien und Herzegowina', 'midi'] = ''\n",
+    "df.at['Republik China (Taiwan)', 'midi'] = 'taiwan.mid'\n",
+    "df.at['Elfenbeinküste', 'midi'] = ''\n",
+    "df.at['Eritrea', 'midi'] = \n",
+    "df.at['Kasachstan', 'midi'] = 'kazakhstan.mid'\n",
+    "df.at['Kirgisistan', 'midi'] = \n",
+    "df.at['Komoren', 'midi'] =\n",
+    "df.at['Kosovo', 'midi'] = \n",
+    "df.at['Liechtenstein', 'midi'] = 'liechtenstein.mid'\n",
+    "df.at['Marshallinseln', midi]\n",
+    "'''\n",
+    "    'Montenegro', 'Niger', 'Osttimor',\n",
+    "       'Palästinensische Autonomiegebiete', 'Palau', 'Salomonen',\n",
+    "       'São Tomé und Príncipe', 'Serbien', 'Seychellen', 'St. Kitts und Nevis',\n",
+    "       'St. Lucia', 'St. Vincent und die Grenadinen', 'Sudan', 'Südsudan',\n",
+    "       'Turkmenistan', 'Weißrussland']'''"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "Quellen: \n",
+    "    Eritrea: https://www.hamienet.com/midi95_Eritrea.html\n",
+    "            https://www.hamienet.com/midi147_Kazakhstan.html\n",
+    "Liechtenstein: http://ingeb.org/Lieder/obenamju.html"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.3"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
